@@ -1,0 +1,187 @@
+---
+title: "Predicting Workout Classe"
+author: "Mike Krcatovich"
+date: "6/27/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+This presentation will show you how I developed a model of prediction. Velloso, Gellersen, Ugulino and Fuks (see citation below) generously allowed myself and many others to use data from their Human Activity Recognition (HAR) project, where they connected sensors to people and equipment as the people did a biceps curl.  The volunteers did some correctly and some that corresponded to 4 different types of errors, totaling 5 classes.  I set up a framework to use the information given to predict future classes.  The real-life implication is that people can wear a fitbit and know whether or not they do this exercise correctly, and if not how they might correct their error(s).
+## Set Up
+First I download packages I think might be necessary:
+```{r cars, results='hide'}
+# Set up packages
+library(caret); library(AppliedPredictiveModeling); library(pgmm); library(gbm); library(forecast); library(lubridate); library(e1071); library(randomForest); library(dplyr)
+
+```
+Next I download the data, put it into the proper working directory, and set train2=train just in case I make an error and need to revert to my original data frame:
+```{r, set up  part 2, echo=FALSE}
+# Set up working direectory: setwd("insert_wd_here")
+train<-read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
+test<-read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
+train2=train
+```
+
+## Pare Down
+
+Next I pare down the data set to get rid of what I won't need:
+```{r pare down}
+the<-function(){
+  this<-data.frame()
+  for(i in 1:160){{
+    that<-sum(is.na(train[,i]))}
+    this<-rbind(this,that)
+  }
+  this
+}
+unique(the())
+# This shows that NAs can be removed since columns either have zero NAs or all NAs
+useCols<-which(the()[,1]==0)
+train2<-train[,useCols]
+
+# I saw 33 columns are entirely blank, and that the first row being blank predicts nearly the whole column being blank
+realValueCols<-which(train2[1,]!="")
+train2<-train2[,realValueCols]
+
+# Remove variables that are specific to the initial study but will clearly not help in the future
+names(train[1:7])
+train2<-train2[,8:60]
+```
+
+## Training with Random Forest
+
+This data never seemed like something for which a linear model would make sense, being that we are attempting to classify the non-linear "classe" variable.  Gradient-boosted modeling seemed worth a try because at first glance there appear to be no variables that by themselves predict the classe variable well, but gbm garnered poor predictability.  Random forest seemed like a good route from the beginning, as decision trees might help one classify the type of exercise (e.g., the dummbell might move a certain way when one throws their elbows forward and therefore might help predict this movement while being almost useless in differentiating between the other classes).
+
+I had what seemed to be an error in calling method "rf" to train2, and eventually decided to call "rf" with only a few variables at a time.  I put together 7 models, with the first one having strong predictive value for train2:
+```{r RFs}
+rf1<-train(classe~roll_belt+pitch_belt+yaw_belt,method="rf",data=train2)
+#rf2<-train(classe~roll_arm + pitch_arm + yaw_arm,data=train2)
+#rf2.5<-train(classe~roll_arm + pitch_arm + yaw_arm,data=train2,method="rf")
+#rf3<-train(classe~roll_forearm + pitch_forearm + yaw_forearm,data=train2,method="rf")
+#rf4<-train(classe~gyros_belt_x + gyros_belt_y + gyros_belt_z,data=train2,method="rf")
+#rf5<-train(classe~roll_dumbbell + pitch_dumbbell + yaw_dumbbell,data=train2,method="rf")
+#rf6<-train(classe~gyros_belt_x + gyros_arm_x + gyros_dumbbell_x + gyros_forearm_x, method="rf", data=train2)
+
+rf1
+```
+
+## Combining Models
+
+By itself, the first model predicted classe better than the HAR website graphic showed.  But when combined with the other 6 predictors, I ended up with a very strong predictive value.
+
+I set up a function to predict classe on some data.  Each of my 7 rf tests would predict, and then the most common response would be selected as my actual guess at the classe.  I used 5 sets of 20 rows from train2 and one set of 900 rows, totaling 1000 tested rows.
+```{r function}
+theFunction<-function(whichTest){
+  
+# Predict using each random forest
+pred1<-predict(rf1,whichTest)
+pred2<-predict(rf2,whichTest)
+pred2.5<-predict(rf2.5,whichTest)
+pred3<-predict(rf3,whichTest)
+pred4<-predict(rf4,whichTest)
+pred5<-predict(rf5,whichTest)
+pred6<-predict(rf6,whichTest)
+
+# Combine all predictions into one data frame of predictions
+predmachine<-cbind(pred1,pred2,pred2.5,pred3,pred4,pred5,pred6)
+
+# Set up a function to find the most common guess for each row and then return a 1-column data frame with all the final predictions
+SelectingNumber<-function(){
+  EDF<-data.frame()
+for(j in 1:NROW(whichTest)){
+  
+one<-function(){
+  daf<-data.frame()
+  for(i in 1:7){
+    if(predmachine[j,i]==1){
+      daf<-rbind(daf,1)
+      
+    }
+    }
+    NROW(daf)
+}
+
+two<-function(){
+  daf<-data.frame()
+  for(i in 1:7){
+    if(predmachine[j,i]==2){
+      daf<-rbind(daf,2)
+    }
+  }
+  NROW(daf)
+}
+
+three<-function(){
+  daf<-data.frame()
+  for(i in 1:7){
+    if(predmachine[j,i]==3){
+      daf<-rbind(daf,3)
+    }
+  }
+  NROW(daf)
+}
+
+four<-function(){
+  daf<-data.frame()
+  for(i in 1:7){
+    if(predmachine[j,i]==4){
+      daf<-rbind(daf,4)
+    }
+  }
+  NROW(daf)
+}
+
+five<-function(){
+  daf<-data.frame()
+  for(i in 1:7){
+    if(predmachine[j,i]==5){
+      daf<-rbind(daf,5)
+    }
+  }
+  NROW(daf)
+}
+
+matrixOfInstances<-rbind(one(),two(),three(),four(),five())
+chooseNumber=max(matrixOfInstances)
+chooseValue=which(matrixOfInstances==chooseNumber)
+EDF<-rbind(EDF,chooseValue)
+}
+EDF
+}
+SelectingNumber()
+}
+
+## Next I cross-validated by myself. I chose 5 random samples from train that had 20 rows and one that had 900 rows, for a total of 1000 rows. I temporarily changed my code to predict these values instead of the "test" values that we were quizzed on. It came out to be 99.8% accurate.
+
+ListSelect<-1:19622
+sample1<-sample(ListSelect,20)
+sample2<-sample(ListSelect,20)
+sample3<-sample(ListSelect,20)
+sample4<-sample(ListSelect,20)
+sample5<-sample(ListSelect,20)
+sample6<-sample(ListSelect,900)
+
+# Now I compare running the tests with sample subsets of "train" compared to "SelectingNumber" selected when I rf1-rf6 to predict these values
+test1B<-train[sample1,]  ## 100% accuracy when I ran "SelectingNumber" to train[sample1B,160], with  160 being "classe" variable
+
+test2<-train[sample2,]   ## 100% 
+test3<-train[sample3,]   ## 100%
+test4<-train[sample4,]   ## 100%
+test5<-train[sample5,]   ## 100%
+test6<-train[sample6,]   ## ~99.8%
+
+```
+
+## Cross Validation and OOB Error Rate
+
+All but 2 were correctly predicted, with a 99.8% accuracy rate.  This cross-validation complemented the cross-validation already present in rf modeling.  My best model, rf1, predicted an OOB error rate of 12.43% by itself.  When including the other 6 models, and considering that my error rate with train2 was .2%, I would expect the actual OOB error rate to be very low when trained participants are purposely messing up exercises.  With that said - regular fitbit wearers might be likely to exaggerate incorrect motions less, and it may be hard to quantify what constitutes each class when incorrect motions are less exaggerated.
+
+## Citation
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+Read more: http://groupware.les.inf.puc-rio.br/har#ixzz6QaCYJ17S
